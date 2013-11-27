@@ -52,6 +52,26 @@ class ObjectTree extends PHPUnit_Framework_TestCase {
 		$this->assertTrue(true);
 	}
 
+	/**
+	 * Test that renaming a part file works
+	 */
+	public function testRenamePartFile() {
+		$storage = new \OC\Files\Storage\Temporary(array());
+		\OC\Files\Filesystem::mount($storage, array(), '/');
+		$rootDir = new OC_Connector_Sabre_Directory('');
+		$objectTree = new \OC\Connector\Sabre\ObjectTree($rootDir);
+		$objectTree->fileView = new \OC\Files\View('');
+
+		$fileView = $objectTree->getFileView();
+		$fileView->mkdir('a');
+		$fileView->file_put_contents('a/a.txt.part', 'a/a.txt');
+
+		$objectTree->move('a/a.txt.part', 'a/a.txt');
+		$this->assertFalse($fileView->file_exists('a/a.txt.part'));
+		$this->assertTrue($fileView->file_exists('a/a.txt'));
+		\OC\Files\Filesystem::clearMounts();
+	}
+
 	function moveFailedProvider() {
 		return array(
 			array('a/b', 'a/c', array('a' => false, 'a/b' => false, 'a/c' => false), array()),
