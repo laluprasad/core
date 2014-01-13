@@ -64,14 +64,24 @@ class Cache {
 	 * @return int
 	 */
 	public function getMimetypeId($mime) {
+		if (empty($mime)) {
+			// Can not insert empty string into Oracle NOT NULL column.
+			$mime = 'application/octet-stream';
+		}
 		if (empty(self::$mimetypeIds)) {
 			$this->loadMimetypes();
 		}
 		
 		if (!isset(self::$mimetypeIds[$mime])) {
-			$result = \OC_DB::executeAudited('INSERT INTO `*PREFIX*mimetypes`(`mimetype`) VALUES(?)', array($mime));
-			self::$mimetypeIds[$mime] = \OC_DB::insertid('*PREFIX*mimetypes');
-			self::$mimetypes[self::$mimetypeIds[$mime]] = $mime;
+			try{
+				$result = \OC_DB::executeAudited('INSERT INTO `*PREFIX*mimetypes`(`mimetype`) VALUES(?)', array($mime));
+				self::$mimetypeIds[$mime] = \OC_DB::insertid('*PREFIX*mimetypes');
+				self::$mimetypes[self::$mimetypeIds[$mime]] = $mime;
+			}
+			catch (\Doctrine\DBAL\DBALException $e){
+				\OC_Log::write('core', 'Exception during mimetype insertion: ' . $e->getmessage(), \OC_Log::DEBUG);
+				return -1;
+			}
 		} 
 				
 		return self::$mimetypeIds[$mime];
@@ -84,8 +94,8 @@ class Cache {
 
 		return isset(self::$mimetypes[$id]) ? self::$mimetypes[$id] : null;
 	}
-	
-	protected function loadMimetypes(){
+
+	public function loadMimetypes(){
 			$result = \OC_DB::executeAudited('SELECT `id`, `mimetype` FROM `*PREFIX*mimetypes`', array());
 			if ($result) {
 				while ($row = $result->fetchRow()) {
@@ -134,6 +144,7 @@ class Cache {
 			$data['fileid'] = (int)$data['fileid'];
 			$data['size'] = (int)$data['size'];
 			$data['mtime'] = (int)$data['mtime'];
+			$data['storage_mtime'] = (int)$data['storage_mtime'];
 			$data['encrypted'] = (bool)$data['encrypted'];
             $data['unencrypted_size'] = (int)$data['unencrypted_size'];
 			$data['storage'] = $this->storageId;
@@ -166,6 +177,10 @@ class Cache {
 				$file['mimepart'] = $this->getMimetype($file['mimepart']);
 				if ($file['storage_mtime'] == 0) {
 					$file['storage_mtime'] = $file['mtime'];
+				}
+				if ($file['encrypted']) {
+					$file['encrypted_size'] = $file['size'];
+					$file['size'] = $file['unencrypted_size'];
 				}
 			}
 			return $files;
@@ -496,7 +511,7 @@ class Cache {
 		$entry = $this->get($path);
 		if ($entry && $entry['mimetype'] === 'httpd/unix-directory') {
 			$id = $entry['fileid'];
-			$sql = 'SELECT SUM(`size`), MIN(`size`) FROM `*PREFIX*filecache` '.
+			$sql = 'SELECT SUM(`size`) AS f1, MIN(`size`) AS f2 FROM `*PREFIX*filecache` '.
 				'WHERE `parent` = ? AND `storage` = ?';
 			$result = \OC_DB::executeAudited($sql, array($id, $this->getNumericStorageId()));
 			if ($row = $result->fetchRow()) {
